@@ -1,4 +1,3 @@
-// SignalingService.cs
 using System;
 using System.Net.WebSockets;
 using System.Text;
@@ -8,44 +7,38 @@ using System.Threading.Tasks;
 
 public class SignalingService
 {
-    // Lock para acesso concorrente
     private readonly object _lock = new();
-
-    // Armazenamos no máximo um rover e um controle por vez
     private WebSocket? _roverSocket;
     private WebSocket? _controlSocket;
 
-    /// <summary>
-    /// Método principal que trata cada nova conexão WebSocket
-    /// </summary>
     public async Task HandleWebSocketAsync(WebSocket socket)
     {
-        // 1) Recebe a mensagem de registro inicial
-        //    { "type":"register", "role":"rover" } ou { "type":"register", "role":"control" }
         var buffer = new byte[4 * 1024];
         var result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
 
         if (result.MessageType != WebSocketMessageType.Text)
         {
             await socket.CloseAsync(WebSocketCloseStatus.InvalidMessageType,
-                                    "Somente texto permitido", CancellationToken.None);
+                "Somente texto permitido", CancellationToken.None);
             return;
         }
 
         var json = Encoding.UTF8.GetString(buffer, 0, result.Count);
-        
-        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-        
+
+        var options = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        };
+
         RegisterMessage? reg;
         try
         {
             reg = JsonSerializer.Deserialize<RegisterMessage>(json, options);
-
         }
         catch
         {
             await socket.CloseAsync(WebSocketCloseStatus.InvalidPayloadData,
-                                    "JSON inválido", CancellationToken.None);
+                "JSON inválido", CancellationToken.None);
             return;
         }
 
@@ -53,20 +46,49 @@ public class SignalingService
             (reg.Role != "rover" && reg.Role != "control"))
         {
             await socket.CloseAsync(WebSocketCloseStatus.PolicyViolation,
-                                    "Tipo ou role inválido", CancellationToken.None);
+                "Tipo ou role inválido", CancellationToken.None);
             return;
         }
 
-        // 2) Armazena o socket no campo correspondente
         lock (_lock)
         {
-            if (reg.Role == "rover")      _roverSocket = socket;
-            else if (reg.Role == "control") _controlSocket = socket;
+            if (reg.Role == "rover")
+            {
+                _roverSocket = socket;
+                Console.WriteLine("[Server] Rover registrado!");
+            }
+            else if (reg.Role == "control")
+            {
+                _controlSocket = socket;
+                Console.WriteLine("[Server] Controle registrado!");
+            }
         }
 
-        WebSocket? peerSocket = reg.Role == "rover" ? _controlSocket : _roverSocket;
+        // Pega dinamicamente quem é o peer A CADA mensagem recebida
+WebSocket? peerSocket;
 
-        // 3) Loop de encaminhamento: tudo que chegar aqui é repassado ao peer
+lock (_lock)
+{
+    peerSocket = reg.Role == "rover" ? _controlSocket : _roverSocket;
+}
+
+if (peerSocket?.State == WebSocketState.Open)
+{
+    await peerSocket.SendAsync(
+        new ArraySegment<byte>(buffer, 0, result.Count),
+        WebSocketMessageType.Text,
+        true,
+        CancellationToken.None
+    );
+
+    Console.WriteLine($"[Server] Mensagem repassada para {(reg.Role == "rover" ? "controle" : "rover")}");
+}
+else
+{
+    Console.WriteLine("[Server] Peer não conectado no momento do envio, descartando mensagem...");
+}
+
+
         while (socket.State == WebSocketState.Open)
         {
             result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
@@ -74,31 +96,45 @@ public class SignalingService
             if (result.MessageType == WebSocketMessageType.Close)
                 break;
 
-            // Só envia se o peer existir e estiver aberto
+            var msgText = Encoding.UTF8.GetString(buffer, 0, result.Count);
+            Console.WriteLine($"[Server] Mensagem recebida de {reg.Role}: {msgText}");
+
             if (peerSocket?.State == WebSocketState.Open)
             {
                 await peerSocket.SendAsync(
                     new ArraySegment<byte>(buffer, 0, result.Count),
                     WebSocketMessageType.Text,
-                    endOfMessage: true,
-                    cancellationToken: CancellationToken.None);
+                    true,
+                    CancellationToken.None);
+
+                Console.WriteLine($"[Server] Mensagem repassada para {(reg.Role == "rover" ? "controle" : "rover")}");
+            }
+            else
+            {
+                Console.WriteLine("[Server] Peer não conectado, descartando mensagem...");
             }
         }
 
-        // 4) Cleanup: remove referência quando desconectar
         lock (_lock)
         {
-            if (_roverSocket == socket)   _roverSocket   = null;
-            if (_controlSocket == socket) _controlSocket = null;
+            if (_roverSocket == socket)
+            {
+                _roverSocket = null;
+                Console.WriteLine("[Server] Rover desconectado");
+            }
+            if (_controlSocket == socket)
+            {
+                _controlSocket = null;
+                Console.WriteLine("[Server] Controle desconectado");
+            }
         }
 
         await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Conexão encerrada", CancellationToken.None);
     }
 
-    // Modelo para a mensagem de registro
     private class RegisterMessage
     {
-        public string Type { get; set; } = default!;  // deve ser sempre "register"
-        public string Role { get; set; } = default!;  // "rover" ou "control"
+        public string Type { get; set; } = default!;
+        public string Role { get; set; } = default!;
     }
 }

@@ -1,44 +1,37 @@
+using System;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using System.Net.WebSockets;
-using System.Text;
+using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Registra o serviço WebSocket
+builder.Services.AddSingleton<SignalingService>();
+
 var app = builder.Build();
 
-// Permitir arquivos estáticos (html, js, etc)
+// Log de requisições para debug
+app.Use(async (context, next) =>
+{
+    Console.WriteLine($"[Request] {context.Request.Path}");
+    await next();
+});
+
+// Habilita servir arquivos estáticos do wwwroot
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
-// Ativar WebSockets
+// Habilita WebSocket
 app.UseWebSockets();
 
-app.Map("/", async context =>
+// Endpoint de WebSocket
+app.Map("/ws", async context =>
 {
     if (context.WebSockets.IsWebSocketRequest)
     {
-        using var webSocket = await context.WebSockets.AcceptWebSocketAsync();
-        Console.WriteLine("WebSocket conectado!");
-
-        var buffer = new byte[1024 * 4];
-        WebSocketReceiveResult result;
-        do
-        {
-            result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
-            var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
-            Console.WriteLine($"Mensagem recebida: {message}");
-
-            // Responde de volta
-            var serverMsg = Encoding.UTF8.GetBytes($"Server recebeu: {message}");
-            await webSocket.SendAsync(new ArraySegment<byte>(serverMsg), result.MessageType, result.EndOfMessage, CancellationToken.None);
-
-        } while (!result.CloseStatus.HasValue);
-
-        await webSocket.CloseAsync(result.CloseStatus.Value, result.CloseStatusDescription, CancellationToken.None);
-        Console.WriteLine("WebSocket desconectado.");
+        var webSocket = await context.WebSockets.AcceptWebSocketAsync();
+        var signalingService = context.RequestServices.GetRequiredService<SignalingService>();
+        await signalingService.HandleWebSocketAsync(webSocket);
     }
     else
     {
@@ -46,4 +39,4 @@ app.Map("/", async context =>
     }
 });
 
-app.Run("http://0.0.0.0:9090");
+app.Run();
