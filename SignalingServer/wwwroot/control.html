@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head><meta charset="utf-8"><title>WS Test</title></head>
+<body>
+  <h1>Teste WS – ROLE: <span id="role"></span></h1>
+  <input id="msg" placeholder="mensagem…"><button id="send">Enviar</button>
+  <pre id="log" style="height:200px;overflow:auto;border:1px solid #ccc"></pre>
+
+  <script>
+    // Ajuste aqui para rover.html → role='rover', control.html → role='control'
+    const control = 'rover';  
+    document.getElementById('role').textContent = control;
+
+    const ws = new WebSocket(`ws://${location.host}/ws`);
+    ws.addEventListener('open', () => {
+      log(`→ conectado, registrando como ${control}`);
+      ws.send(JSON.stringify({ type:'register', role:control }));
+    });
+    ws.addEventListener('message', e => log(`← recebido: ${e.data}`));
+    ws.addEventListener('close', () => log('** desconectado **'));
+
+    document.getElementById('send').onclick = () => {
+      const txt = document.getElementById('msg').value.trim();
+      if (!txt) return;
+      ws.send(JSON.stringify({ type:'test', payload: txt }));
+      log(`→ enviado: ${txt}`);
+    };
+
+    function log(txt){
+      const pre = document.getElementById('log');
+      pre.textContent += txt + '\n';
+      pre.scrollTop = pre.scrollHeight;
+    }
+  </script>
+</body>
+</html>

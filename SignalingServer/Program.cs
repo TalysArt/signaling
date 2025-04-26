@@ -1,79 +1,49 @@
-﻿using System.Net;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using System.Net.WebSockets;
 using System.Text;
-public class SimpleWebSocketServer
+
+var builder = WebApplication.CreateBuilder(args);
+
+var app = builder.Build();
+
+// Permitir arquivos estáticos (html, js, etc)
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
+// Ativar WebSockets
+app.UseWebSockets();
+
+app.Map("/", async context =>
 {
-	protected SimpleWebSocketServer()
-	{}
+    if (context.WebSockets.IsWebSocketRequest)
+    {
+        using var webSocket = await context.WebSockets.AcceptWebSocketAsync();
+        Console.WriteLine("WebSocket conectado!");
 
-	public static async Task Main(string[] args)
-	{
-		int port = 5296;
-		string uriPrefix = $"http://localhost:{port}/ws/";
+        var buffer = new byte[1024 * 4];
+        WebSocketReceiveResult result;
+        do
+        {
+            result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+            var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
+            Console.WriteLine($"Mensagem recebida: {message}");
 
-		HttpListener listener = new();
-		listener.Prefixes.Add(uriPrefix);
-		listener.Start();
+            // Responde de volta
+            var serverMsg = Encoding.UTF8.GetBytes($"Server recebeu: {message}");
+            await webSocket.SendAsync(new ArraySegment<byte>(serverMsg), result.MessageType, result.EndOfMessage, CancellationToken.None);
 
-		Console.WriteLine($"WebSocket server started at {uriPrefix}");
+        } while (!result.CloseStatus.HasValue);
 
-		while (true)
-		{
-			HttpListenerContext context = await listener.GetContextAsync();
+        await webSocket.CloseAsync(result.CloseStatus.Value, result.CloseStatusDescription, CancellationToken.None);
+        Console.WriteLine("WebSocket desconectado.");
+    }
+    else
+    {
+        context.Response.StatusCode = 400;
+    }
+});
 
-			if (context.Request.IsWebSocketRequest)
-			{
-				Console.WriteLine("Client connected!");
-
-				HttpListenerWebSocketContext webSocketContext = await context.AcceptWebSocketAsync(null);
-
-				// Handle WebSocket in a separate task
-				_ = Task.Run(() => HandleWebSocketAsync(webSocketContext.WebSocket));
-			}
-			else
-			{
-				context.Response.StatusCode = (int)HttpStatusCode.NotFound;
-				context.Response.Close();
-				Console.WriteLine("Not a WebSocket request.");
-			}
-		}
-	}
-
-	private static async Task HandleWebSocketAsync(WebSocket webSocket)
-	{
-		try
-		{
-			byte[] buffer = new byte[1024];
-
-			// Keep the connection alive (you would typically handle messages here)
-			while (webSocket.State == WebSocketState.Open)
-			{
-				Console.Write("Enter message (type 'exit' to disconnect): ");
-
-				WebSocketReceiveResult result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
-				string message = Encoding.UTF8.GetString(buffer, 0, result.Count);
-				Console.WriteLine($"Received: {message}");
-
-				if (message.ToLower() == "exit")
-				{
-					Console.WriteLine("Closing connection...");
-					await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Client disconnected", CancellationToken.None);
-				}
-			}
-		}
-		catch (Exception ex)
-		{
-			Console.WriteLine($"WebSocket error: {ex.Message}");
-		}
-		finally
-		{
-			if (webSocket.State != WebSocketState.Closed)
-			{
-				await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None);
-			}
-
-			webSocket.Dispose();
-			Console.WriteLine("Connection fully closed.");
-		}
-	}
-}
+app.Run("http://0.0.0.0:9090");
