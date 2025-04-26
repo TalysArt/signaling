@@ -1,0 +1,5 @@
+{
+    "appService.preDeployTask": "publish-release",
+    "appService.deploySubpath": "SignalingServer/bin/Release/net9.0/publish",
+    "appService.defaultWebAppToDeploy": "undefined/subscriptions/5a09895f-4dd1-4e9a-bade-1d37ec2c4204/resourceGroups/carrinhoo/providers/Microsoft.Web/sites/signalingserverr"
+}
