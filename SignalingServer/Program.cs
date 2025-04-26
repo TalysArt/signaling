@@ -1,65 +1,79 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.WebSockets;
 using System.Text;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Hosting;
-using System.Threading;
-using System.Threading.Tasks;
-
-var builder = WebApplication.CreateBuilder(args);
-
-// 1) Configure Kestrel para ouvir em ANY IP na porta 9090
-builder.WebHost.ConfigureKestrel(options =>
+public class SimpleWebSocketServer
 {
-    options.Listen(IPAddress.Any, 9090); 
-});
+	protected SimpleWebSocketServer()
+	{}
 
-var app = builder.Build();
+	public static async Task Main(string[] args)
+	{
+		int port = 5296;
+		string uriPrefix = $"http://localhost:{port}/ws/";
 
-// 2) Habilita handshake WebSocket
-app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(30) });
+		HttpListener listener = new();
+		listener.Prefixes.Add(uriPrefix);
+		listener.Start();
 
-// 3) Intercepta TODO Upgrade WebSocket (raiz “/” ou qualquer rota)
-app.Use(async (context, next) =>
-{
-    if (context.WebSockets.IsWebSocketRequest)
-    {
-        using var socket = await context.WebSockets.AcceptWebSocketAsync();
+		Console.WriteLine($"WebSocket server started at {uriPrefix}");
 
-        // Envia “Hello World” imediatamente
-        var hello = Encoding.UTF8.GetBytes("Hello World");
-        await socket.SendAsync(hello, WebSocketMessageType.Text, true, CancellationToken.None);
+		while (true)
+		{
+			HttpListenerContext context = await listener.GetContextAsync();
 
-        // Loop de echo
-        var buffer = new byte[1024];
-        WebSocketReceiveResult result;
-        do
-        {
-            result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
-            if (!result.CloseStatus.HasValue)
-            {
-                await socket.SendAsync(
-                    new ArraySegment<byte>(buffer, 0, result.Count),
-                    result.MessageType,
-                    result.EndOfMessage,
-                    CancellationToken.None);
-            }
-        }
-        while (!result.CloseStatus.HasValue);
+			if (context.Request.IsWebSocketRequest)
+			{
+				Console.WriteLine("Client connected!");
 
-        await socket.CloseAsync(result.CloseStatus.Value, result.CloseStatusDescription, CancellationToken.None);
-        return; // não cai no next(), já tratamos o WS
-    }
+				HttpListenerWebSocketContext webSocketContext = await context.AcceptWebSocketAsync(null);
 
-    await next();
-});
+				// Handle WebSocket in a separate task
+				_ = Task.Run(() => HandleWebSocketAsync(webSocketContext.WebSocket));
+			}
+			else
+			{
+				context.Response.StatusCode = (int)HttpStatusCode.NotFound;
+				context.Response.Close();
+				Console.WriteLine("Not a WebSocket request.");
+			}
+		}
+	}
 
-// 4) Serve apenas index.html e client.js em wwwroot/
-app.UseDefaultFiles();
-app.UseStaticFiles();
+	private static async Task HandleWebSocketAsync(WebSocket webSocket)
+	{
+		try
+		{
+			byte[] buffer = new byte[1024];
 
-// 5) Rota HTTP “/” redireciona para /index.html
-app.MapGet("/", () => Results.Redirect("/index.html"));
+			// Keep the connection alive (you would typically handle messages here)
+			while (webSocket.State == WebSocketState.Open)
+			{
+				Console.Write("Enter message (type 'exit' to disconnect): ");
 
-app.Run();
+				WebSocketReceiveResult result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+				string message = Encoding.UTF8.GetString(buffer, 0, result.Count);
+				Console.WriteLine($"Received: {message}");
+
+				if (message.ToLower() == "exit")
+				{
+					Console.WriteLine("Closing connection...");
+					await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Client disconnected", CancellationToken.None);
+				}
+			}
+		}
+		catch (Exception ex)
+		{
+			Console.WriteLine($"WebSocket error: {ex.Message}");
+		}
+		finally
+		{
+			if (webSocket.State != WebSocketState.Closed)
+			{
+				await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None);
+			}
+
+			webSocket.Dispose();
+			Console.WriteLine("Connection fully closed.");
+		}
+	}
+}
