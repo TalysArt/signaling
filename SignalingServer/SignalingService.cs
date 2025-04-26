@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
+
 public class UserConnection
 {
     public UserConnection(WebSocket webSocket, string username)

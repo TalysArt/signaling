@@ -23,4 +23,6 @@ app.Use(async (context, next) =>
     }
 });
 
+// Executa na porta 9090
+app.Urls.Add("http://localhost:9090");
 app.Run();
