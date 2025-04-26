@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Demo de Texto WebRTC</title>
+    <script src="client.js" defer></script>
+</head>
+<body>
+    <div id="loginPage">
+        <input type="text" id="usernameInput" placeholder="Digite o nome de usuário">
+        <button id="loginBtn">Login</button>
+    </div>
+    <div id="callPage" style="display:none;">
+        <input type="text" id="callToUsernameInput" placeholder="Digite o nome de usuário para chamar">
+        <button id="callBtn">Chamar</button>
+        <button id="hangUpBtn">Encerrar</button>
+        <input type="text" id="msgInput" placeholder="Digite uma mensagem">
+        <button id="sendMsgBtn">Enviar</button>
+        <div id="chatarea"></div>
+    </div>
+</body>
+</html>
