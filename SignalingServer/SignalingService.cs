@@ -54,67 +54,73 @@ public class SignalingService
         {
             if (reg.Role == "rover")
             {
+                if (_roverSocket != null && _roverSocket.State == WebSocketState.Open)
+                {
+                    _roverSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Substituído", CancellationToken.None).Wait();
+                    Console.WriteLine("[Server] Rover anterior desconectado!");
+                }
                 _roverSocket = socket;
                 Console.WriteLine("[Server] Rover registrado!");
             }
             else if (reg.Role == "control")
             {
+                if (_controlSocket != null && _controlSocket.State == WebSocketState.Open)
+                {
+                    _controlSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Substituído", CancellationToken.None).Wait();
+                    Console.WriteLine("[Server] Controle anterior desconectado!");
+                }
                 _controlSocket = socket;
                 Console.WriteLine("[Server] Controle registrado!");
             }
         }
 
-        // Pega dinamicamente quem é o peer A CADA mensagem recebida
-WebSocket? peerSocket;
-
-lock (_lock)
-{
-    peerSocket = reg.Role == "rover" ? _controlSocket : _roverSocket;
-}
-
-if (peerSocket?.State == WebSocketState.Open)
-{
-    await peerSocket.SendAsync(
-        new ArraySegment<byte>(buffer, 0, result.Count),
-        WebSocketMessageType.Text,
-        true,
-        CancellationToken.None
-    );
-
-    Console.WriteLine($"[Server] Mensagem repassada para {(reg.Role == "rover" ? "controle" : "rover")}");
-}
-else
-{
-    Console.WriteLine("[Server] Peer não conectado no momento do envio, descartando mensagem...");
-}
-
-
+        // Loop principal
         while (socket.State == WebSocketState.Open)
         {
-            result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
-
-            if (result.MessageType == WebSocketMessageType.Close)
-                break;
-
-            var msgText = Encoding.UTF8.GetString(buffer, 0, result.Count);
-            Console.WriteLine($"[Server] Mensagem recebida de {reg.Role}: {msgText}");
-
-            if (peerSocket?.State == WebSocketState.Open)
+            try
             {
-                await peerSocket.SendAsync(
-                    new ArraySegment<byte>(buffer, 0, result.Count),
-                    WebSocketMessageType.Text,
-                    true,
-                    CancellationToken.None);
+                result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
 
-                Console.WriteLine($"[Server] Mensagem repassada para {(reg.Role == "rover" ? "controle" : "rover")}");
+                if (result.MessageType == WebSocketMessageType.Close)
+                    break;
+
+                var msgText = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                Console.WriteLine($"[Server] Mensagem recebida de {reg.Role}: {msgText}");
+
+                WebSocket? peerSocket;
+                lock (_lock)
+                {
+                    peerSocket = reg.Role == "rover" ? _controlSocket : _roverSocket;
+                }
+
+                if (peerSocket != null && peerSocket.State == WebSocketState.Open)
+                {
+                    await peerSocket.SendAsync(
+                        new ArraySegment<byte>(buffer, 0, result.Count),
+                        WebSocketMessageType.Text,
+                        true,
+                        CancellationToken.None);
+
+                    Console.WriteLine($"[Server] Mensagem repassada para {(reg.Role == "rover" ? "controle" : "rover")}");
+                }
+                else
+                {
+                    Console.WriteLine("[Server] Peer desconectado ou inválido. Mensagem descartada.");
+                }
             }
-            else
+            catch (WebSocketException ex)
             {
-                Console.WriteLine("[Server] Peer não conectado, descartando mensagem...");
+                Console.WriteLine($"[Server] Exceção WebSocket: {ex.Message}");
+                break;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Server] Erro inesperado: {ex.Message}");
+                break;
             }
         }
 
+        // Cleanup no fim
         lock (_lock)
         {
             if (_roverSocket == socket)
@@ -129,7 +135,11 @@ else
             }
         }
 
-        await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Conexão encerrada", CancellationToken.None);
+        try
+        {
+            await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Conexão encerrada", CancellationToken.None);
+        }
+        catch { /* socket já pode estar fechado */ }
     }
 
     private class RegisterMessage

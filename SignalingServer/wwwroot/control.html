@@ -9,12 +9,27 @@
 
   <script>
     const ws = new WebSocket(`ws://${location.host}/ws`);
+    let heartbeatInterval;
+
     ws.addEventListener('open', () => {
       log("Conectado! Registrando como controle...");
       ws.send(JSON.stringify({ type: 'register', role: 'control' }));
+
+      // Iniciar heartbeat: manda um 'ping' a cada 20 segundos
+      heartbeatInterval = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'ping' }));
+          log("(Ping enviado)");
+        }
+      }, 20000);
     });
+
     ws.addEventListener('message', e => log(`Recebido: ${e.data}`));
-    ws.addEventListener('close', () => log('Desconectado'));
+
+    ws.addEventListener('close', () => {
+      log('Desconectado');
+      clearInterval(heartbeatInterval);
+    });
 
     document.getElementById('send').onclick = () => {
       const txt = document.getElementById('msg').value.trim();
