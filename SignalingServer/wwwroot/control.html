@@ -2,20 +2,37 @@
 <html lang="pt-BR">
 <head><meta charset="utf-8"><title>Controle</title></head>
 <body>
-  <h1>Controle</h1>
-  <input id="msg" placeholder="Mensagem...">
-  <button id="send">Enviar</button>
-  <pre id="log" style="height:200px;overflow:auto;border:1px solid #ccc"></pre>
+  <h1>Controle - Enviar Comandos</h1>
+
+  <!-- Botões rápidos padrão -->
+  <div>
+    <button onclick="enviarComando('move_forward')">Frente</button>
+    <button onclick="enviarComando('move_backward')">Trás</button>
+    <button onclick="enviarComando('turn_left')">Esquerda</button>
+    <button onclick="enviarComando('turn_right')">Direita</button>
+  </div>
+
+  <hr>
+
+  <!-- Campo de texto para comando personalizado -->
+  <div>
+    <input id="comandoCustom" placeholder="Digite o comando (ex: stop)" style="width: 300px;">
+    <input id="velocidadeCustom" placeholder="Velocidade (ex: 50)" style="width: 100px;">
+    <button onclick="enviarComandoCustomizado()">Enviar Comando Personalizado</button>
+  </div>
+
+  <hr>
+
+  <pre id="log" style="height:300px;overflow:auto;border:1px solid #ccc"></pre>
 
   <script>
     const ws = new WebSocket(`ws://${location.host}/ws`);
     let heartbeatInterval;
 
     ws.addEventListener('open', () => {
-      log("Conectado! Registrando como controle...");
+      log("Conectado! Registrando como Controle...");
       ws.send(JSON.stringify({ type: 'register', role: 'control' }));
 
-      // Iniciar heartbeat: manda um 'ping' a cada 20 segundos
       heartbeatInterval = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ type: 'ping' }));
@@ -24,19 +41,42 @@
       }, 20000);
     });
 
-    ws.addEventListener('message', e => log(`Recebido: ${e.data}`));
+    ws.addEventListener('message', e => {
+      log(`Dados recebidos: ${e.data}`);
+    });
 
     ws.addEventListener('close', () => {
       log('Desconectado');
       clearInterval(heartbeatInterval);
     });
 
-    document.getElementById('send').onclick = () => {
-      const txt = document.getElementById('msg').value.trim();
-      if (!txt) return;
-      ws.send(JSON.stringify({ type: 'test', payload: txt }));
-      log(`Enviado: ${txt}`);
-    };
+    function enviarComando(action) {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'command',
+          payload: { action: action, speed: 50 }
+        }));
+        log(`Comando enviado: ${action}`);
+      }
+    }
+
+    function enviarComandoCustomizado() {
+      const action = document.getElementById('comandoCustom').value.trim();
+      const speedStr = document.getElementById('velocidadeCustom').value.trim();
+      if (!action || !speedStr) {
+        log("Preencha o comando e a velocidade!");
+        return;
+      }
+      const speed = parseInt(speedStr);
+
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'command',
+          payload: { action: action, speed: speed }
+        }));
+        log(`Comando personalizado enviado: ${action} (Velocidade: ${speed})`);
+      }
+    }
 
     function log(msg) {
       const pre = document.getElementById('log');

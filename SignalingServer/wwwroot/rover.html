@@ -2,20 +2,28 @@
 <html lang="pt-BR">
 <head><meta charset="utf-8"><title>Rover</title></head>
 <body>
-  <h1>Rover</h1>
-  <input id="msg" placeholder="Mensagem...">
-  <button id="send">Enviar</button>
-  <pre id="log" style="height:200px;overflow:auto;border:1px solid #ccc"></pre>
+  <h1>Rover - Recepção de Comandos</h1>
+
+  <!-- Área para enviar dados de sensores -->
+  <div>
+    <input id="temp" placeholder="Temperatura..." style="width: 150px;">
+    <input id="dist" placeholder="Distância..." style="width: 150px;">
+    <button id="sendSensor">Enviar Sensor</button>
+  </div>
+
+  <hr>
+
+  <!-- Log de mensagens -->
+  <pre id="log" style="height:300px;overflow:auto;border:1px solid #ccc"></pre>
 
   <script>
     const ws = new WebSocket(`ws://${location.host}/ws`);
     let heartbeatInterval;
 
     ws.addEventListener('open', () => {
-      log("Conectado! Registrando como rover...");
+      log("Conectado! Registrando como Rover...");
       ws.send(JSON.stringify({ type: 'register', role: 'rover' }));
 
-      // Iniciar heartbeat: manda um 'ping' a cada 20 segundos
       heartbeatInterval = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ type: 'ping' }));
@@ -24,18 +32,41 @@
       }, 20000);
     });
 
-    ws.addEventListener('message', e => log(`Recebido: ${e.data}`));
+    ws.addEventListener('message', e => {
+      try {
+        const data = JSON.parse(e.data);
+
+        if (data.type === "command" && data.payload) {
+          const action = data.payload.action;
+          const speed = data.payload.speed;
+          log(`➡️ Comando recebido: Ação = ${action}, Velocidade = ${speed}`);
+        } else {
+          log(`Recebido: ${e.data}`);
+        }
+      } catch (err) {
+        log(`Erro ao interpretar mensagem: ${e.data}`);
+      }
+    });
 
     ws.addEventListener('close', () => {
       log('Desconectado');
       clearInterval(heartbeatInterval);
     });
 
-    document.getElementById('send').onclick = () => {
-      const txt = document.getElementById('msg').value.trim();
-      if (!txt) return;
-      ws.send(JSON.stringify({ type: 'test', payload: txt }));
-      log(`Enviado: ${txt}`);
+    document.getElementById('sendSensor').onclick = () => {
+      const temp = document.getElementById('temp').value.trim();
+      const dist = document.getElementById('dist').value.trim();
+      if (!temp || !dist) return;
+
+      ws.send(JSON.stringify({
+        type: 'sensor_data',
+        payload: {
+          temperature: parseFloat(temp),
+          distance: parseFloat(dist)
+        }
+      }));
+
+      log(`Sensor enviado: Temp=${temp}°C, Dist=${dist}m`);
     };
 
     function log(msg) {
